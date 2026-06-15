@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Склад{% endblock %}
+{% block content %}
+<div class="hero-bar">
+  <div class="hero-canvas-wrap"><canvas id="hero-canvas"></canvas></div>
+  <div class="hero-text">
+    <h2><i class="bi bi-box-seam me-2" style="color:var(--accent-green)"></i>Контроль склада</h2>
+    <p>Остатки в реальном времени · автопополнение · FIFO/FEFO</p>
+  </div>
+  <div class="ms-auto d-flex gap-2 align-items-center">
+    <div class="input-group" style="width:240px">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input class="form-control" id="mat-search" placeholder="Поиск по материалам...">
+    </div>
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#replenishModal"><i class="bi bi-plus-lg me-1"></i>Пополнить</button>
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5><i class="bi bi-broadcast me-2" style="color:var(--accent-green)"></i>Реальные остатки склада (live)</h5>
+  <div class="table-responsive">
+    <table class="table table-sm compact mb-0">
+      <thead><tr><th>Материал</th><th>Запас</th><th>Шкала</th><th>Макс</th></tr></thead>
+      <tbody id="live-stock"></tbody>
+    </table>
+  </div>
+</div>
+
+<ul class="nav nav-tabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#stock"><i class="bi bi-boxes me-1"></i>Остатки БД</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#receipt"><i class="bi bi-box-arrow-in-down me-1"></i>Приёмка</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#issue"><i class="bi bi-box-arrow-up me-1"></i>Выдача</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#materials"><i class="bi bi-list-ul me-1"></i>Материалы</button></li>
+</ul>
+
+<div class="tab-content card" style="border-top-left-radius:0;border-top-right-radius:0">
+  <div class="tab-pane fade show active p-3" id="stock">
+    <button class="btn btn-outline-secondary btn-sm mb-2 btn-spin" onclick="loadStock()"><i class="bi bi-arrow-clockwise me-1"></i>Обновить</button>
+    <div class="table-responsive"><table class="table table-sm compact mb-0" id="stock-table"></table></div>
+  </div>
+  <div class="tab-pane fade p-3" id="receipt">
+    <h5><i class="bi bi-box-arrow-in-down me-2" style="color:var(--accent-green)"></i>Приёмка партии материала</h5>
+    <form id="receipt-form" class="row g-2 mt-2">
+      <div class="col-md-3"><label class="form-label">Материал</label><select class="form-select" name="material_id" id="r-material"></select></div>
+      <div class="col-md-2"><label class="form-label">Номер лота</label><input class="form-control" name="lot_no" required></div>
+      <div class="col-md-2"><label class="form-label">Кол-во</label><input class="form-control" name="qty" type="number" step="0.001" min="0.001" required></div>
+      <div class="col-md-3"><label class="form-label">Ячейка</label><select class="form-select" name="cell_id" id="r-cell"></select></div>
+      <div class="col-md-2"><label class="form-label">Годен до</label><input class="form-control" name="expires_at" type="datetime-local"></div>
+      <div class="col-12 mt-2"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Принять</button></div>
+    </form>
+    <div id="r-result" class="mt-3 small"></div>
+  </div>
+  <div class="tab-pane fade p-3" id="issue">
+    <h5><i class="bi bi-box-arrow-up me-2" style="color:var(--accent-orange)"></i>Выдача в производство</h5>
+    <form id="issue-form" class="row g-2 mt-2">
+      <div class="col-md-3"><label class="form-label">Материал</label><select class="form-select" name="material_id" id="i-material"></select></div>
+      <div class="col-md-2"><label class="form-label">Кол-во</label><input class="form-control" name="qty" type="number" step="0.001" min="0.001" required></div>
+      <div class="col-md-2"><label class="form-label">Стратегия</label>
+        <select class="form-select" name="strategy"><option value="fifo">FIFO</option><option value="fefo">FEFO</option></select>
+      </div>
+      <div class="col-md-3"><label class="form-label">Примечание</label><input class="form-control" name="note"></div>
+      <div class="col-12 mt-2"><button class="btn btn-warning"><i class="bi bi-send me-1"></i>Выдать</button></div>
+    </form>
+    <div id="i-result" class="mt-3 small"></div>
+  </div>
+  <div class="tab-pane fade p-3" id="materials">
+    <form id="material-form" class="row g-2 mb-3">
+      <div class="col-md-2"><input class="form-control" name="sku" placeholder="SKU" required></div>
+      <div class="col-md-3"><input class="form-control" name="name" placeholder="Название" required></div>
+      <div class="col-md-1"><input class="form-control" name="unit" placeholder="ед." value="шт"></div>
+      <div class="col-md-2"><input class="form-control" name="reorder_point" type="number" step="0.01" placeholder="точка заказа"></div>
+      <div class="col-md-1"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="is_hazmat"><label class="form-check-label" style="font-size:.8rem">опасное</label></div></div>
+      <div class="col-md-3"><button class="btn btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Добавить</button></div>
+    </form>
+    <div class="table-responsive"><table class="table table-sm compact mb-0" id="m-table"></table></div>
+  </div>
+</div>
+
+<!-- Replenish modal -->
+<div class="modal fade" id="replenishModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-lg me-2" style="color:var(--accent-green)"></i>Ручное пополнение</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Материал</label><select id="rep-mat" class="form-select"></select></div>
+        <div class="mb-3"><label class="form-label">Количество</label><input id="rep-qty" type="number" min="1" class="form-control" value="100"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button class="btn btn-success" id="rep-go"><i class="bi bi-check-lg me-1"></i>Пополнить</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+startPolyhedron('hero-canvas','cube',{speed:1, scale:38});
+
+let search = '';
+document.getElementById('mat-search').oninput = e => { search = e.target.value.toLowerCase(); renderLiveStock(); };
+
+function renderLiveStock() {
+  const mats = ErpSim.getMaterials();
+  const tb = document.getElementById('live-stock');
+  const filtered = mats.map((m,i)=>({...m, idx:i})).filter(m => !search || m.name.toLowerCase().includes(search));
+  tb.innerHTML = filtered.map(m => {
+    const pct = Math.round(m.stock/m.max*100);
+    const low = pct < 20;
+    return `<tr data-idx="${m.idx}">
+      <td>${low ? '<i class="bi bi-exclamation-triangle text-warning me-1"></i>' : ''}${m.name}</td>
+      <td><b class="mono" style="color:${low?'var(--accent-red)':'var(--accent-cyan)'}">${m.stock}</b></td>
+      <td style="width:35%"><div class="progress-bar-cyber" style="height:14px"><div class="fill" style="width:${pct}%"></div><div class="progress-text">${pct}%</div></div></td>
+      <td><span class="mono" style="color:var(--text-muted)">${m.max}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+ErpSim.on('tick', renderLiveStock);
+ErpSim.on('replenish', e => {
+  renderLiveStock();
+  const row = document.querySelector(`#live-stock tr[data-idx="${e.idx}"]`);
+  if (row) { row.classList.remove('flash-update'); void row.offsetWidth; row.classList.add('flash-update'); }
+});
+renderLiveStock();
+
+// модальное пополнение
+function fillRepSelect() {
+  const sel = document.getElementById('rep-mat');
+  sel.innerHTML = ErpSim.getMaterials().map((m,i)=>`<option value="${i}">${m.name}</option>`).join('');
+}
+fillRepSelect();
+document.getElementById('rep-go').onclick = () => {
+  const idx = +document.getElementById('rep-mat').value;
+  const qty = +document.getElementById('rep-qty').value || 0;
+  if (qty <= 0) return;
+  ErpSim.manualReplenish(idx, qty);
+  bootstrap.Modal.getInstance(document.getElementById('replenishModal')).hide();
+};
+
+// ----- старая БД-часть -----
+async function loadCells() {
+  try { const c = await api('/api/wms/cells'); document.querySelector('#r-cell').innerHTML = c.map(x=>`<option value="${x.id}">${x.label} (${x.zone_type})</option>`).join(''); } catch(e) {}
+}
+async function loadMaterials() {
+  try {
+    const m = await api('/api/wms/materials');
+    const opts = m.map(x=>`<option value="${x.id}">${x.sku} — ${x.name}</option>`).join('');
+    document.querySelector('#r-material').innerHTML = opts;
+    document.querySelector('#i-material').innerHTML = opts;
+    document.querySelector('#m-table').innerHTML =
+      '<thead><tr><th>SKU</th><th>Название</th><th>Ед.</th><th>Опасное</th><th>Точка заказа</th></tr></thead><tbody>' +
+      m.map(x=>`<tr><td><code>${x.sku}</code></td><td>${x.name}</td><td>${x.unit}</td><td>${x.is_hazmat?'<span class="text-warning"><i class="bi bi-exclamation-triangle"></i></span>':''}</td><td class="mono">${x.reorder_point}</td></tr>`).join('') +
+      '</tbody>';
+  } catch(e) {}
+}
+async function loadStock() {
+  try {
+    const s = await api('/api/wms/stock');
+    document.querySelector('#stock-table').innerHTML =
+      '<thead><tr><th>SKU</th><th>Материал</th><th>Лот</th><th class="text-end">Кол-во</th><th>Ячейка</th><th>Принят</th><th>Годен до</th></tr></thead><tbody>' +
+      s.map(r=>`<tr><td><code>${r.material_sku}</code></td><td>${r.material_name}</td><td>${r.lot_no}</td><td class="text-end mono">${r.qty} ${r.unit}</td><td>${r.cell}</td><td>${fmt(r.received_at)}</td><td>${fmt(r.expires_at)}</td></tr>`).join('') +
+      '</tbody>';
+  } catch(e) {}
+}
+
+document.getElementById('receipt-form').onsubmit = async e => {
+  e.preventDefault(); const f = new FormData(e.target);
+  const body = { material_id:+f.get('material_id'), lot_no:f.get('lot_no'), qty:+f.get('qty'), cell_id:+f.get('cell_id'), expires_at:f.get('expires_at')||null };
+  try { const r = await api('/api/wms/receipt', {method:'POST', body:JSON.stringify(body)}); document.getElementById('r-result').innerHTML = `<span class="text-success">✓ Принято, lot_id=${r.lot_id}</span>`; e.target.reset(); loadStock(); }
+  catch (err) { document.getElementById('r-result').innerHTML = `<span class="text-danger">${err.message}</span>`; }
+};
+document.getElementById('issue-form').onsubmit = async e => {
+  e.preventDefault(); const f = new FormData(e.target);
+  const body = { material_id:+f.get('material_id'), qty:+f.get('qty'), strategy:f.get('strategy'), note:f.get('note') };
+  try { const r = await api('/api/wms/issue', {method:'POST', body:JSON.stringify(body)}); document.getElementById('i-result').innerHTML = '<span class="text-success">✓ Выдано:</span><ul>'+r.picked.map(p=>`<li>${p.lot_no}: ${p.qty}</li>`).join('')+'</ul>'; loadStock(); }
+  catch (err) { document.getElementById('i-result').innerHTML = `<span class="text-danger">${err.message}</span>`; }
+};
+document.getElementById('material-form').onsubmit = async e => {
+  e.preventDefault(); const f = new FormData(e.target);
+  const body = { sku:f.get('sku'), name:f.get('name'), unit:f.get('unit')||'шт', is_hazmat:f.get('is_hazmat')==='on', reorder_point:+(f.get('reorder_point')||0) };
+  try { await api('/api/wms/materials', {method:'POST', body:JSON.stringify(body)}); e.target.reset(); loadMaterials(); } catch (err) { alert(err.message); }
+};
+
+(async () => { await loadCells(); await loadMaterials(); await loadStock(); })();
+</script>
+{% endblock %}
