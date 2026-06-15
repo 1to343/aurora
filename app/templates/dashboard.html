@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<div class="hero-bar">
+  <div class="hero-canvas-wrap"><canvas id="hero-canvas"></canvas></div>
+  <div class="hero-text">
+    <h2><i class="bi bi-grid-1x2 me-2" style="color:var(--accent-cyan)"></i>Командный центр</h2>
+    <p>Производственный дашборд в реальном времени · KPI · аналитика выпуска</p>
+  </div>
+  <div class="ms-auto">
+    <button class="btn btn-outline-primary btn-spin" onclick="refreshAll()"><i class="bi bi-arrow-clockwise me-1"></i>Обновить</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3 col-6"><div class="kpi-card cyan"><div class="kpi-label">📦 Выпуск за неделю</div><div class="kpi-value" id="kpi-week">—</div></div></div>
+  <div class="col-md-3 col-6"><div class="kpi-card red"><div class="kpi-label">⚠️ Средний брак</div><div class="kpi-value" id="kpi-defect">—</div></div></div>
+  <div class="col-md-3 col-6"><div class="kpi-card green"><div class="kpi-label">🔄 Активных партий</div><div class="kpi-value" id="kpi-active">—</div></div></div>
+  <div class="col-md-3 col-6"><div class="kpi-card orange"><div class="kpi-label">⚙️ Загрузка оборудования</div><div class="kpi-value" id="kpi-equip">—</div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8"><div class="card p-3"><h5><i class="bi bi-graph-up-arrow me-2" style="color:var(--accent-cyan)"></i>Выпуск по дням</h5><canvas id="ch-output" height="100"></canvas></div></div>
+  <div class="col-lg-4"><div class="card p-3"><h5><i class="bi bi-pie-chart me-2" style="color:var(--accent-purple)"></i>По этапам</h5><canvas id="ch-stages" height="180"></canvas></div></div>
+  <div class="col-lg-6"><div class="card p-3"><h5><i class="bi bi-graph-down me-2" style="color:var(--accent-red)"></i>Процент брака</h5><canvas id="ch-defect" height="130"></canvas></div></div>
+  <div class="col-lg-6"><div class="card p-3"><h5><i class="bi bi-bar-chart-line me-2" style="color:var(--accent-green)"></i>Загрузка оборудования</h5><canvas id="ch-equip" height="130"></canvas></div></div>
+  <div class="col-lg-12"><div class="card p-3"><h5><i class="bi bi-box-seam me-2" style="color:var(--accent-yellow)"></i>Запасы склада</h5><canvas id="ch-stock" height="80"></canvas></div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+startPolyhedron('hero-canvas','icosahedron',{speed:.6,scale:42});
+
+const C_CYAN='#00d4ff', C_GREEN='#00ff88', C_RED='#ff5577', C_ORANGE='#ffb86b', C_PURPLE='#bf6bff', C_YELLOW='#ffe66b';
+Chart.defaults.color = '#8b8fa3';
+Chart.defaults.borderColor = 'rgba(0,212,255,.1)';
+Chart.defaults.font.family = 'Inter,system-ui,sans-serif';
+
+const days14 = Array.from({length:14}, (_,i)=>{ const d=new Date(); d.setDate(d.getDate()-13+i); return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'}); });
+const output = Array.from({length:14}, ()=> 80 + Math.floor(Math.random()*121));
+const defectPct = Array.from({length:14}, ()=> +(1 + Math.random()*7).toFixed(1));
+
+// 1. Output (area)
+const ctxOut = document.getElementById('ch-output').getContext('2d');
+const gradOut = ctxOut.createLinearGradient(0,0,0,260); gradOut.addColorStop(0, 'rgba(0,212,255,.5)'); gradOut.addColorStop(1, 'rgba(0,212,255,0)');
+new Chart(ctxOut, { type:'line', data:{ labels:days14, datasets:[{ label:'шт./день', data: output, borderColor:C_CYAN, backgroundColor:gradOut, fill:true, tension:.35, borderWidth:2, pointRadius:3, pointBackgroundColor:C_CYAN, pointHoverRadius:6 }] }, options:{ plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'rgba(10,14,26,.95)', borderColor:C_CYAN, borderWidth:1 } }, scales:{ y:{ beginAtZero:true, grid:{color:'rgba(0,212,255,.06)'} }, x:{ grid:{color:'rgba(0,212,255,.06)'} } } } });
+
+// 2. Stages (pie)
+const stagesCount = ErpSim.STAGES.map(s => ErpSim.getLots().filter(l=>l.stage===s.id && l.status!=='done').length);
+const chStages = new Chart(document.getElementById('ch-stages'), { type:'doughnut', data:{ labels: ErpSim.STAGES.map(s=>s.name), datasets:[{ data: stagesCount, backgroundColor:[C_CYAN, C_GREEN, C_PURPLE, C_ORANGE, C_YELLOW, C_RED], borderColor:'#0a0e1a', borderWidth:2 }] }, options:{ plugins:{ legend:{ position:'bottom', labels:{ font:{size:10}, padding:8 } } }, cutout:'55%', animation:{ animateScale:true } } });
+
+// 3. Defect (line + reference)
+new Chart(document.getElementById('ch-defect'), { type:'line', data:{ labels:days14, datasets:[ { label:'Брак, %', data: defectPct, borderColor:C_RED, backgroundColor:'rgba(255,85,119,.1)', tension:.3, borderWidth:2, pointRadius:3, fill:true }, { label:'Норма (3%)', data: Array(14).fill(3), borderColor:C_GREEN, borderDash:[6,4], borderWidth:1.5, pointRadius:0, fill:false } ] }, options:{ plugins:{ legend:{ position:'top', labels:{font:{size:10}} }, tooltip:{ backgroundColor:'rgba(10,14,26,.95)' } }, scales:{ y:{ beginAtZero:true, max:10, grid:{color:'rgba(0,212,255,.06)'} }, x:{ grid:{color:'rgba(0,212,255,.06)'} } } } });
+
+// 4. Equipment (horizontal bar)
+const machines = ['STEP-A1','LITHO-B2','ETCH-C3','DOP-D4','TEST-E5'];
+const machineLoad = machines.map(()=> 40 + Math.floor(Math.random()*56));
+const chEquip = new Chart(document.getElementById('ch-equip'), { type:'bar', data:{ labels:machines, datasets:[{ label:'Загрузка %', data: machineLoad, backgroundColor: machineLoad.map(v => v<60?C_YELLOW : v<=85?C_CYAN : C_GREEN), borderRadius:4 }] }, options:{ indexAxis:'y', plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'rgba(10,14,26,.95)' } }, scales:{ x:{ beginAtZero:true, max:100, grid:{color:'rgba(0,212,255,.06)'} }, y:{ grid:{display:false} } }, animation:{ duration:1200 } } });
+
+// 5. Stock
+function buildStockChart() {
+  const mats = ErpSim.getMaterials();
+  const ctxStock = document.getElementById('ch-stock').getContext('2d');
+  const grad = ctxStock.createLinearGradient(0,0,0,200);
+  grad.addColorStop(0, 'rgba(255,230,107,.7)'); grad.addColorStop(1, 'rgba(255,230,107,.1)');
+  return new Chart(ctxStock, { type:'bar', data:{ labels: mats.map(m=>m.name.length>22?m.name.slice(0,20)+'…':m.name), datasets:[{ label:'Остаток', data: mats.map(m=>m.stock), backgroundColor: grad, borderColor: C_YELLOW, borderWidth:1, borderRadius:4 }] }, options:{ plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'rgba(10,14,26,.95)', callbacks:{ title: items => mats[items[0].dataIndex].name, label: ctx => `Остаток: ${ctx.parsed.y} / ${mats[ctx.dataIndex].max}` } } }, scales:{ y:{ beginAtZero:true, grid:{color:'rgba(0,212,255,.06)'} }, x:{ grid:{display:false}, ticks:{ font:{size:10}, maxRotation:30 } } } } });
+}
+let chStock = buildStockChart();
+
+// KPIs
+function recalcKPI() {
+  const lots = ErpSim.getLots();
+  const active = lots.filter(l=> l.status==='running').length;
+  const weekly = output.slice(-7).reduce((a,b)=>a+b,0);
+  const avgDef = (defectPct.reduce((a,b)=>a+b,0)/defectPct.length).toFixed(1);
+  const avgEq = Math.round(machineLoad.reduce((a,b)=>a+b,0)/machineLoad.length);
+  document.getElementById('kpi-week').textContent = weekly;
+  const defEl = document.getElementById('kpi-defect');
+  defEl.textContent = avgDef + '%';
+  defEl.parentElement.classList.toggle('red', +avgDef > 3);
+  document.getElementById('kpi-active').textContent = active;
+  document.getElementById('kpi-equip').textContent = avgEq + '%';
+}
+recalcKPI();
+
+function refreshStages() {
+  const counts = ErpSim.STAGES.map(s => ErpSim.getLots().filter(l=>l.stage===s.id && l.status!=='done').length);
+  chStages.data.datasets[0].data = counts;
+  chStages.update();
+}
+
+ErpSim.on('tick', () => { recalcKPI(); refreshStages(); });
+ErpSim.on('replenish', () => {
+  const mats = ErpSim.getMaterials();
+  chStock.data.datasets[0].data = mats.map(m=>m.stock);
+  chStock.update();
+});
+
+function refreshAll() {
+  for (let i=0;i<14;i++) { output[i] = 80 + Math.floor(Math.random()*121); defectPct[i] = +(1+Math.random()*7).toFixed(1); }
+  recalcKPI();
+}
+</script>
+{% endblock %}

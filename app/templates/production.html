@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Процесс изготовления{% endblock %}
+{% block content %}
+<div class="hero-bar">
+  <div class="hero-canvas-wrap"><canvas id="hero-canvas"></canvas></div>
+  <div class="hero-text">
+    <h2><i class="bi bi-cpu-fill me-2" style="color:var(--accent-purple)"></i>Процесс изготовления</h2>
+    <p>Lot tracking в реальном времени · 6 этапов · симуляция производства</p>
+  </div>
+  <div class="ms-auto d-flex gap-2 align-items-center">
+    <select id="status-filter" class="form-select form-select-sm" style="width:180px">
+      <option value="">Все партии</option>
+      <option value="running">В работе</option>
+      <option value="paused">На паузе</option>
+      <option value="defect">Брак</option>
+      <option value="done">Завершены</option>
+    </select>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-3">
+      <h5><i class="bi bi-broadcast me-2" style="color:var(--accent-cyan)"></i>Активные партии (live)</h5>
+      <div class="table-responsive">
+        <table class="table table-sm compact mb-0">
+          <thead><tr><th>ID</th><th>Этап</th><th style="width:25%">Прогресс</th><th>Статус</th><th>Старт</th><th>Обновлено</th><th></th></tr></thead>
+          <tbody id="live-lots"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <ul class="nav nav-tabs mt-3" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#wos"><i class="bi bi-clipboard-data me-1"></i>WO (БД)</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#lots-db"><i class="bi bi-layers me-1"></i>Партии (БД)</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#newwo"><i class="bi bi-plus-circle me-1"></i>Новый WO</button></li>
+    </ul>
+    <div class="tab-content card" style="border-top-left-radius:0;border-top-right-radius:0">
+      <div class="tab-pane fade show active p-3" id="wos">
+        <div class="table-responsive"><table class="table table-sm compact mb-0" id="wo-table"></table></div>
+      </div>
+      <div class="tab-pane fade p-3" id="lots-db">
+        <div class="table-responsive"><table class="table table-sm compact mb-0" id="lots-table"></table></div>
+      </div>
+      <div class="tab-pane fade p-3" id="newwo">
+        <form id="wo-form" class="row g-2">
+          <div class="col-md-4"><input class="form-control" name="wo_no" placeholder="Номер WO" required></div>
+          <div class="col-md-5"><input class="form-control" name="product_name" placeholder="Продукт" required></div>
+          <div class="col-md-3"><input class="form-control" name="qty_planned" type="number" min="1" placeholder="План, шт" required></div>
+          <div class="col-12 mt-2"><h6 style="color:var(--text-secondary)"><i class="bi bi-signpost-split me-1"></i>Маршрут</h6><div id="steps"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="addStep()"><i class="bi bi-plus"></i> шаг</button>
+          </div>
+          <div class="col-12 mt-3"><button class="btn btn-success"><i class="bi bi-check-lg me-1"></i>Создать WO</button></div>
+        </form>
+        <div id="wo-result" class="mt-3 small"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card p-3" id="detail-card">
+      <h5><i class="bi bi-cpu me-2" style="color:var(--accent-purple)"></i><span id="detail-title">Выберите партию</span></h5>
+      <div id="detail-body" style="color:var(--text-muted)">Клик по строке выше — покажет детали партии и анимацию микрочипа.</div>
+      <div class="text-center mt-2">
+        <svg id="chip-svg" width="280" height="280" viewBox="0 0 280 280" style="max-width:100%"></svg>
+      </div>
+      <div id="detail-actions" class="mt-2"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+startPolyhedron('hero-canvas','octahedron',{speed:1.2, scale:34});
+
+const STAGES = ErpSim.STAGES;
+let selected = null;
+let filterStatus = '';
+
+document.getElementById('status-filter').onchange = e => { filterStatus = e.target.value; renderLive(); };
+
+function statusBadge(s) {
+  const map = { running:['В работе','running'], paused:['На паузе','paused'], defect:['⚠️ Брак','defect'], done:['✅ Завершена','done'] };
+  const [text, cls] = map[s] || [s, s];
+  return `<span class="badge badge-status-${cls}">${text}</span>`;
+}
+
+function renderLive() {
+  const lots = ErpSim.getLots()
+    .slice()
+    .sort((a,b)=> (a.status==='done')-(b.status==='done') || a.id.localeCompare(b.id));
+  const filtered = filterStatus ? lots.filter(l=>l.status===filterStatus) : lots;
+  const html = filtered.map(l => {
+    const stage = STAGES[l.stage-1];
+    const cls = l.status==='defect' ? 'defect' : (l.status==='done' ? 'done' : '');
+    return `<tr data-lot="${l.id}" style="cursor:pointer">
+      <td><code>${l.id}</code></td>
+      <td><span style="color:var(--accent-purple);font-size:.8rem">${l.stage}/6</span> <b>${stage.name}</b><br><small style="color:var(--text-muted)">${stage.short}</small></td>
+      <td>
+        <div class="progress-bar-cyber ${cls}">
+          <div class="fill" style="width:${l.progress}%"></div>
+          <div class="progress-text">${Math.round(l.progress)}%</div>
+        </div>
+      </td>
+      <td>${statusBadge(l.status)}</td>
+      <td><small class="mono">${fmtTime(l.startedAt)}</small></td>
+      <td><small class="mono">${fmtTime(l.lastUpdate)}</small></td>
+      <td>
+        ${l.status==='running' ? `<button class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation();ErpSim.stopLot('${l.id}')" title="Стоп"><i class="bi bi-pause"></i></button>` : ''}
+        ${l.status==='paused' ? `<button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation();ErpSim.startLotAgain('${l.id}')" title="Возобновить"><i class="bi bi-play"></i></button>` : ''}
+        ${l.status==='defect' ? `<button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation();ErpSim.resumeLot('${l.id}')" title="После брака"><i class="bi bi-arrow-clockwise"></i></button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('live-lots').innerHTML = html || '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:1rem">Нет партий по фильтру</td></tr>';
+
+  document.querySelectorAll('#live-lots tr[data-lot]').forEach(tr => {
+    tr.onclick = () => selectLot(tr.dataset.lot);
+  });
+
+  if (selected) renderDetail();
+}
+
+function selectLot(id) {
+  selected = id;
+  document.querySelectorAll('#live-lots tr').forEach(r=>r.style.background='');
+  const row = document.querySelector(`#live-lots tr[data-lot="${id}"]`);
+  if (row) row.style.background = 'rgba(191,107,255,.08)';
+  renderDetail();
+}
+
+function renderDetail() {
+  const l = ErpSim.getLots().find(x=>x.id===selected);
+  if (!l) return;
+  const overall = ((l.stage-1)*100 + l.progress) / 6;
+  document.getElementById('detail-title').textContent = l.id;
+  document.getElementById('detail-body').innerHTML = `
+    <div class="mono" style="font-size:.85rem;line-height:1.6">
+      Этап: <span style="color:var(--accent-cyan)">${STAGES[l.stage-1].name}</span> (${l.stage}/6)<br>
+      Прогресс этапа: <span style="color:var(--accent-green)">${Math.round(l.progress)}%</span><br>
+      Общий прогресс: <span style="color:var(--accent-yellow)">${overall.toFixed(1)}%</span><br>
+      Статус: ${statusBadge(l.status)}<br>
+      Старт: <span style="color:var(--text-secondary)">${fmt(l.startedAt)}</span><br>
+      Обновлено: <span style="color:var(--text-secondary)">${fmt(l.lastUpdate)}</span>
+    </div>`;
+  drawChip(overall, l.status);
+
+  const acts = [];
+  if (l.status==='running') acts.push(`<button class="btn btn-warning btn-sm" onclick="ErpSim.stopLot('${l.id}')"><i class="bi bi-pause me-1"></i>Остановить</button>`);
+  if (l.status==='paused') acts.push(`<button class="btn btn-success btn-sm" onclick="ErpSim.startLotAgain('${l.id}')"><i class="bi bi-play me-1"></i>Возобновить</button>`);
+  if (l.status==='defect') acts.push(`<button class="btn btn-success btn-sm" onclick="ErpSim.resumeLot('${l.id}')"><i class="bi bi-arrow-clockwise me-1"></i>Сбросить брак</button>`);
+  document.getElementById('detail-actions').innerHTML = acts.join(' ');
+}
+
+function drawChip(percent, status) {
+  const svg = document.getElementById('chip-svg');
+  const isDefect = status === 'defect';
+  const isDone = status === 'done';
+  const tColor = isDefect ? '#ff5577' : '#e8a87c';
+  const padColor = isDefect ? '#ff8855' : '#ffd87c';
+  const bg = '#0d3320';
+  svg.innerHTML = `
+    <defs>
+      <radialGradient id="cglow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="${tColor}" stop-opacity=".4"/>
+        <stop offset="100%" stop-color="${tColor}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect x="0" y="0" width="280" height="280" rx="6" fill="${bg}" stroke="${tColor}" stroke-width="1.5" opacity=".5"/>
+    <rect class="chip-outline" x="30" y="30" width="220" height="220" rx="8" fill="none" stroke="${tColor}" stroke-width="2"/>
+    <g class="chip-pads" fill="${padColor}">
+      ${Array.from({length:8}, (_,i)=> {
+        const x = 50 + i*22; return `<rect class="pad" x="${x}" y="14" width="14" height="14"/><rect class="pad" x="${x}" y="252" width="14" height="14"/>`;
+      }).join('')}
+      ${Array.from({length:8}, (_,i)=> {
+        const y = 50 + i*22; return `<rect class="pad" x="14" y="${y}" width="14" height="14"/><rect class="pad" x="252" y="${y}" width="14" height="14"/>`;
+      }).join('')}
+    </g>
+    <g class="chip-traces" stroke="${tColor}" stroke-width="1.4" fill="none" stroke-linecap="round">
+      <path class="tr" d="M 50 30 L 50 80 L 90 80 L 90 130"/>
+      <path class="tr" d="M 110 30 L 110 90 L 140 90 L 140 140 L 170 140"/>
+      <path class="tr" d="M 170 30 L 170 110 L 220 110 L 220 60"/>
+      <path class="tr" d="M 250 70 L 200 70 L 200 100 L 160 100"/>
+      <path class="tr" d="M 250 130 L 215 130 L 215 170 L 175 170"/>
+      <path class="tr" d="M 250 200 L 195 200 L 195 165 L 130 165"/>
+      <path class="tr" d="M 200 250 L 200 215 L 150 215 L 150 180"/>
+      <path class="tr" d="M 110 250 L 110 200 L 80 200 L 80 160"/>
+      <path class="tr" d="M 60 250 L 60 180 L 100 180 L 100 145"/>
+      <path class="tr" d="M 30 200 L 70 200 L 70 230"/>
+      <path class="tr" d="M 30 130 L 70 130 L 70 100 L 110 100 L 110 60"/>
+      <path class="tr" d="M 30 80 L 90 80"/>
+    </g>
+    <g class="chip-blocks">
+      <rect class="block" x="100" y="105" width="40" height="30" fill="none" stroke="${tColor}" stroke-width="1.2" opacity=".7"/>
+      <rect class="block" x="155" y="140" width="50" height="35" fill="none" stroke="${tColor}" stroke-width="1.2" opacity=".7"/>
+      <rect class="block" x="80" y="155" width="35" height="25" fill="none" stroke="${tColor}" stroke-width="1.2" opacity=".7"/>
+      <circle class="via" cx="140" cy="140" r="3" fill="${padColor}"/>
+      <circle class="via" cx="155" cy="170" r="3" fill="${padColor}"/>
+      <circle class="via" cx="180" cy="175" r="3" fill="${padColor}"/>
+      <circle class="core" cx="140" cy="140" r="24" fill="url(#cglow)"/>
+    </g>
+  `;
+
+  // длины
+  const outline = svg.querySelector('.chip-outline');
+  const olen = 220*4;
+  outline.style.cssText = `stroke-dasharray:${olen};stroke-dashoffset:${olen};animation:drawline .5s ease-out forwards`;
+
+  const pads = svg.querySelectorAll('.chip-pads .pad');
+  pads.forEach((p,i) => {
+    p.style.cssText = `opacity:0;transform-origin:center;animation: padIn .1s ease-out ${.5 + i*0.03}s forwards`;
+  });
+
+  const traces = svg.querySelectorAll('.chip-traces .tr');
+  traces.forEach((tr,i) => {
+    const len = tr.getTotalLength();
+    const visible = len * (percent/100);
+    tr.style.cssText = `stroke-dasharray:${len};stroke-dashoffset:${len};animation: drawline 2s ease-out ${1 + i*.07}s forwards;`;
+    // фиксируем визуально процент: после анимации stroke-dashoffset = (len - visible)
+    setTimeout(() => { tr.style.strokeDashoffset = (len - visible) + ''; }, 1000 + i*70 + 2000);
+  });
+
+  const cores = svg.querySelectorAll('.via, .core');
+  cores.forEach(c => c.style.cssText = 'animation: pulse 1.8s ease-in-out infinite');
+
+  if (isDone) {
+    svg.style.filter = 'drop-shadow(0 0 18px rgba(0,255,136,.6))';
+  } else if (isDefect) {
+    svg.style.filter = 'drop-shadow(0 0 18px rgba(255,85,119,.6))';
+  } else {
+    svg.style.filter = 'none';
+  }
+}
+
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes drawline { to { stroke-dashoffset: 0; } }
+  @keyframes padIn { from { opacity:0; transform:scale(.3); } to { opacity:1; transform:scale(1); } }
+  @keyframes pulse { 0%,100% { opacity:.5; transform:scale(1);} 50% { opacity:1; transform:scale(1.3);} }
+`;
+document.head.appendChild(style);
+
+ErpSim.on('tick', renderLive);
+ErpSim.on('defect', l => {
+  const row = document.querySelector(`#live-lots tr[data-lot="${l.id}"]`);
+  if (row) { row.classList.remove('flash-error'); void row.offsetWidth; row.classList.add('flash-error'); }
+});
+ErpSim.on('complete', l => {
+  const row = document.querySelector(`#live-lots tr[data-lot="${l.id}"]`);
+  if (row) { row.classList.remove('flash-update'); void row.offsetWidth; row.classList.add('flash-update'); }
+});
+renderLive();
+
+// ----- БД-часть (старая логика) -----
+let stepIdx = 0;
+function addStep(name='', recipe='') {
+  stepIdx++;
+  document.getElementById('steps').insertAdjacentHTML('beforeend', `
+    <div class="row g-2 mb-2 align-items-end" data-step>
+      <div class="col-md-1"><label class="form-label small">#</label><input class="form-control step-i" type="number" value="${stepIdx}"></div>
+      <div class="col-md-3"><label class="form-label small">Этап</label><input class="form-control step-name" value="${name}" required></div>
+      <div class="col-md-2"><label class="form-label small">Рецептура</label><input class="form-control step-recipe" value="${recipe}"></div>
+      <div class="col-md-2"><label class="form-label small">Параметр</label><input class="form-control step-target"></div>
+      <div class="col-md-2"><label class="form-label small">Допуск</label><input class="form-control step-tol"></div>
+      <div class="col-md-2"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('[data-step]').remove()"><i class="bi bi-trash"></i></button></div>
+    </div>`);
+}
+['Литография','Травление','Диффузия','Металлизация','Корпусирование'].forEach((n,i)=>addStep(n,'R-'+(i+1)));
+
+async function loadWO() {
+  const wos = await api('/api/prod/work-orders').catch(()=>[]);
+  document.getElementById('wo-table').innerHTML =
+    '<thead><tr><th>WO</th><th>Продукт</th><th>План</th><th>Статус</th><th>Партий</th><th>Маршрут</th></tr></thead><tbody>' +
+    wos.map(w=>`<tr><td><code>${w.wo_no}</code></td><td>${w.product}</td><td>${w.qty_planned}</td><td>${badge(w.status)}</td><td>${w.lots}</td><td><small style="color:var(--text-secondary)">${w.steps.map(s=>s.name).join(' → ')}</small></td></tr>`).join('') + '</tbody>';
+}
+async function loadLotsDB() {
+  const lots = await api('/api/prod/lots').catch(()=>[]);
+  document.getElementById('lots-table').innerHTML =
+    '<thead><tr><th>Lot</th><th>Статус</th><th>Пластин</th><th>WO</th><th>Шаг</th><th>Принят</th></tr></thead><tbody>' +
+    lots.map(l=>`<tr><td><code>${l.lot_no}</code></td><td>${badge(l.status)}</td><td>${l.wafer_qty}</td><td>${l.wo_no || '—'}</td><td>${l.current_step ? (l.step_index+1)+'. '+l.current_step : '—'}</td><td>${fmt(l.received_at)}</td></tr>`).join('') + '</tbody>';
+}
+
+document.getElementById('wo-form').onsubmit = async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const steps = [...document.querySelectorAll('#steps [data-step]')].map(d => ({
+    order_index: +d.querySelector('.step-i').value,
+    name: d.querySelector('.step-name').value,
+    recipe: d.querySelector('.step-recipe').value,
+    target_param: d.querySelector('.step-target').value,
+    tolerance: d.querySelector('.step-tol').value
+  }));
+  const body = { wo_no:f.get('wo_no'), product_name:f.get('product_name'), qty_planned:+f.get('qty_planned'), notes:'', steps };
+  try {
+    const r = await api('/api/prod/work-orders', {method:'POST', body:JSON.stringify(body)});
+    document.getElementById('wo-result').innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Создан WO id=${r.id}</span>`;
+    loadWO();
+  } catch (err) { document.getElementById('wo-result').innerHTML = `<span class="text-danger">${err.message}</span>`; }
+};
+
+loadWO(); loadLotsDB();
+</script>
+{% endblock %}

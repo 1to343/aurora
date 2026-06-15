@@ -1,0 +1,640 @@
+{% extends "base.html" %}
+{% block title %}Дерево производства{% endblock %}
+{% block content %}
+<style>
+  /* ===== Экраны ===== */
+  #screen-carousel, #screen-tree {
+    transition: opacity .4s ease, transform .4s ease;
+  }
+  .screen-hidden { opacity: 0 !important; transform: scale(.92) !important; pointer-events: none !important; position: absolute !important; left:-9999px; }
+
+  /* ===== Карусель ===== */
+  .carousel-title {
+    text-align: center;
+    font-size: 1.7rem; font-weight: 700;
+    letter-spacing: .5px;
+    color: #fff;
+    text-shadow: 0 0 22px rgba(0,229,208,.6);
+    margin-top: .5rem;
+  }
+  .carousel-stage {
+    position: relative;
+    height: 520px;
+    perspective: 1400px;
+    margin: 1rem 0 .5rem;
+    user-select: none;
+  }
+  .carousel-ring {
+    position: absolute;
+    width: 280px; height: 380px;
+    left: 50%; top: 50%;
+    margin-left: -140px; margin-top: -190px;
+    transform-style: preserve-3d;
+    transition: transform .05s linear;
+  }
+  .card-3d {
+    position: absolute;
+    width: 280px; height: 380px;
+    background: rgba(15,23,42,.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(0,212,255,.2);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    padding: 1.3rem;
+    text-align: center;
+    transition: width .3s ease, height .3s ease, border-color .3s ease, box-shadow .3s ease;
+    overflow: hidden;
+    cursor: pointer;
+    backface-visibility: hidden;
+  }
+  .card-3d .chip-thumb { height: 90px; display: grid; place-items: center; margin-bottom: .6rem; }
+  .card-3d .c-name { font-size: 18px; font-weight: 700; color: #fff; }
+  .card-3d .c-type { font-size: 13px; color: var(--text-secondary); margin-bottom: .5rem; }
+  .card-3d .c-badge {
+    display: inline-block; font-family: var(--font-mono); font-size: 12px;
+    padding: 2px 10px; border-radius: 20px;
+    background: rgba(0,212,255,.1); border: 1px solid rgba(0,212,255,.3); color: var(--accent-cyan);
+  }
+  .card-3d .c-extra {
+    margin-top: .8rem; opacity: 0; max-height: 0; transition: opacity .3s ease, max-height .3s ease;
+    font-size: 12.5px; color: var(--text-secondary); text-align: left;
+  }
+  .card-3d .c-extra .row-x { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .card-3d .c-extra .row-x b { color: var(--text-primary); font-family: var(--font-mono); }
+  .card-3d .c-open {
+    margin-top: .7rem; width: 100%;
+    border: none; border-radius: 10px; padding: .55rem;
+    font-weight: 700; color: #0a0e1a; cursor: pointer;
+    background: linear-gradient(120deg, var(--accent-cyan), #00e5d0, var(--accent-cyan));
+    background-size: 200% 100%;
+    animation: btn-shift 4s linear infinite;
+    transition: transform .15s, box-shadow .2s;
+  }
+  .card-3d .c-open:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,229,208,.5); }
+  @keyframes btn-shift { 0%{background-position:0% 50%} 100%{background-position:200% 50%} }
+  /* фронтальная карточка */
+  .card-3d.is-front { border-color: rgba(0,212,255,.6); box-shadow: 0 0 30px rgba(0,212,255,.3); }
+  .card-3d.is-front:hover { width: 320px; height: 440px; margin-left:-20px; margin-top:-30px; z-index: 50; }
+  .card-3d.is-front:hover .c-extra { opacity: 1; max-height: 260px; }
+
+  .carousel-hint { text-align: center; color: var(--text-muted); font-size: .85rem; animation: hint-fade 3s ease-in-out infinite; }
+  @keyframes hint-fade { 0%,100%{opacity:.4} 50%{opacity:.9} }
+
+  /* ===== Дерево ===== */
+  #screen-tree { position: relative; }
+  .tree-toolbar { display: flex; align-items: center; gap: 1rem; margin-bottom: .6rem; }
+  .btn-back {
+    background: rgba(17,24,39,.6); border: 1px solid var(--border-glass);
+    color: var(--text-secondary); border-radius: 8px; padding: .4rem .9rem; cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-back:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+  #tree-wrap { position: relative; border-radius: 14px; overflow: hidden; }
+  #tree-canvas { display: block; width: 100%; height: 600px; cursor: grab; background: radial-gradient(circle at 50% 60%, rgba(0,229,208,.05), transparent 70%); }
+  #tree-canvas:active { cursor: grabbing; }
+  #node-tooltip {
+    position: fixed; display: none; pointer-events: none; z-index: 200;
+    background: rgba(10,14,26,.95); backdrop-filter: blur(10px);
+    border: 1px solid rgba(0,212,255,.4); border-radius: 10px;
+    padding: .6rem .8rem; font-size: .82rem; max-width: 260px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  #node-tooltip .nt-title { color: var(--accent-cyan); font-weight: 700; margin-bottom: .25rem; }
+  #node-tooltip .nt-row { color: var(--text-secondary); font-size: .76rem; margin-top: .15rem; }
+  #node-tooltip .nt-row b { color: var(--text-primary); }
+  #node-panel {
+    position: absolute; top: 0; right: 0; width: 340px; max-width: 80%; height: 100%;
+    background: rgba(17,24,39,.92); backdrop-filter: blur(16px);
+    border-left: 1px solid var(--border-glass-strong);
+    padding: 1.2rem; overflow-y: auto;
+    transform: translateX(110%); transition: transform .3s cubic-bezier(.2,.8,.2,1);
+    z-index: 20;
+  }
+  #node-panel.open { transform: translateX(0); }
+  #node-panel h5 { color: var(--accent-cyan); }
+  #node-panel .np-close { position: absolute; top: .8rem; right: 1rem; cursor: pointer; color: var(--text-muted); font-size: 1.3rem; }
+  #node-panel .np-field { margin-top: .8rem; }
+  #node-panel .np-field .lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); }
+  #node-panel .np-field .val { color: var(--text-primary); font-size: .9rem; margin-top: .15rem; }
+  .tree-legend { font-size: .8rem; color: var(--text-muted); }
+</style>
+
+<!-- ===== ЭКРАН 1: КАРУСЕЛЬ ===== -->
+<div id="screen-carousel">
+  <div class="carousel-title"><i class="bi bi-diagram-3 me-2" style="color:#00e5d0"></i>Выберите модель микрочипа</div>
+  <div class="carousel-stage" id="stage">
+    <div class="carousel-ring" id="ring"></div>
+  </div>
+  <div class="carousel-hint">← Перетащите мышью, прокрутите колёсиком или кликните по боковой карточке →</div>
+</div>
+
+<!-- ===== ЭКРАН 2: ДЕРЕВО ===== -->
+<div id="screen-tree" class="screen-hidden">
+  <div class="tree-toolbar">
+    <button class="btn-back" onclick="backToCarousel()"><i class="bi bi-arrow-left me-1"></i>К выбору модели</button>
+    <div>
+      <h3 style="margin:0" id="tree-title">Дерево производства</h3>
+      <small class="tree-legend">ЛКМ — вращение · колесо — масштаб · клик по узлу — детали</small>
+    </div>
+  </div>
+  <div id="tree-wrap" class="card">
+    <canvas id="tree-canvas"></canvas>
+    <div id="node-panel">
+      <span class="np-close" onclick="closePanel()">×</span>
+      <div id="np-body"></div>
+    </div>
+  </div>
+</div>
+
+<div id="node-tooltip"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ============================================================
+//  ДАННЫЕ МОДЕЛЕЙ
+// ============================================================
+const SERIES = {
+  'Протон': '#00d4ff', 'Нейрон': '#bf6bff', 'Фотон': '#00ff88', 'Кварц': '#ffb86b'
+};
+const MODELS = [
+  { name:'Протон-К1', series:'Протон', type:'Контроллер промышленный', shape:'mcu', proc:'90 нм', spec:'12 млн транз. · 1 ядро', area:'Промышленная автоматизация', stages:12, cycle:'14 дней' },
+  { name:'Протон-К2 Pro', series:'Протон', type:'Контроллер расширенный', shape:'mcu', proc:'65 нм', spec:'48 млн транз. · 2 ядра', area:'Робототехника, IoT', stages:15, cycle:'18 дней' },
+  { name:'Нейрон-М1', series:'Нейрон', type:'Процессор сигналов (DSP)', shape:'cpu', proc:'45 нм', spec:'120 млн транз. · 4 ядра', area:'Обработка сигналов, телеком', stages:18, cycle:'22 дня' },
+  { name:'Нейрон-М3', series:'Нейрон', type:'Процессор общего назначения', shape:'cpu', proc:'28 нм', spec:'350 млн транз. · 8 ядер', area:'Серверные решения', stages:22, cycle:'28 дней' },
+  { name:'Фотон-S1', series:'Фотон', type:'FPGA программируемый', shape:'fpga', proc:'40 нм', spec:'85 млн транз. · 50K LUT', area:'Прототипирование, телеком', stages:16, cycle:'20 дней' },
+  { name:'Фотон-S2 Ultra', series:'Фотон', type:'FPGA высокопроизводительный', shape:'fpga', proc:'22 нм', spec:'900 млн транз. · 200K LUT', area:'HPC, ИИ-ускорение', stages:26, cycle:'35 дней' },
+  { name:'Кварц-R1', series:'Кварц', type:'Радиочастотный модуль (RF)', shape:'rf', proc:'130 нм', spec:'до 6 ГГц · 2 канала', area:'Связь, радары', stages:14, cycle:'16 дней' },
+  { name:'Кварц-R3 Спектр', series:'Кварц', type:'Многодиапазонный RF-трансивер', shape:'rf', proc:'65 нм', spec:'до 28 ГГц · 8 каналов', area:'5G, спутниковая связь', stages:20, cycle:'25 дней' },
+];
+
+function chipSVG(shape, color) {
+  const legs = (n, horizontal) => {
+    let s = '';
+    for (let i = 0; i < n; i++) {
+      const p = 14 + i * (52 / (n - 1));
+      if (horizontal) s += `<rect x="${p}" y="2" width="4" height="8" fill="${color}"/><rect x="${p}" y="70" width="4" height="8" fill="${color}"/>`;
+      else s += `<rect x="2" y="${p}" width="8" height="4" fill="${color}"/><rect x="70" y="${p}" width="8" height="4" fill="${color}"/>`;
+    }
+    return s;
+  };
+  let inner = '';
+  if (shape === 'mcu') inner = `<rect x="22" y="22" width="36" height="36" rx="3" fill="none" stroke="${color}" stroke-width="2"/><circle cx="40" cy="40" r="5" fill="${color}"/>`;
+  else if (shape === 'cpu') inner = `<rect x="20" y="20" width="40" height="40" rx="2" fill="none" stroke="${color}" stroke-width="2"/>${[28,40,52].map(x=>[28,40,52].map(y=>`<rect x="${x-2}" y="${y-2}" width="4" height="4" fill="${color}"/>`).join('')).join('')}`;
+  else if (shape === 'fpga') inner = `<rect x="18" y="18" width="44" height="44" fill="none" stroke="${color}" stroke-width="2"/>${[26,34,42,50].map(x=>`<line x1="${x}" y1="18" x2="${x}" y2="62" stroke="${color}" stroke-width="1" opacity=".5"/><line x1="18" y1="${x}" x2="62" y2="${x}" stroke="${color}" stroke-width="1" opacity=".5"/>`).join('')}`;
+  else if (shape === 'rf') inner = `<rect x="22" y="30" width="36" height="28" rx="3" fill="none" stroke="${color}" stroke-width="2"/><path d="M40 30 V14 M32 18 L40 12 L48 18" fill="none" stroke="${color}" stroke-width="2"/><circle cx="40" cy="44" r="4" fill="${color}"/>`;
+  return `<svg width="80" height="80" viewBox="0 0 80 80" style="filter:drop-shadow(0 0 10px ${color}88)">
+    <rect x="14" y="14" width="52" height="52" rx="4" fill="rgba(15,25,50,.6)" stroke="${color}" stroke-width="2.5"/>
+    ${legs(6, true)}${legs(6, false)}${inner}
+  </svg>`;
+}
+
+// ============================================================
+//  3D-КАРУСЕЛЬ
+// ============================================================
+const ring = document.getElementById('ring');
+const N = MODELS.length;
+const angleStep = 360 / N;
+const radius = 420;
+let rotation = 0;       // текущий угол
+let velocity = 0;       // для инерции
+let dragging = false, lastX = 0, dragMoved = 0;
+
+const cards = MODELS.map((m, i) => {
+  const color = SERIES[m.series];
+  const el = document.createElement('div');
+  el.className = 'card-3d';
+  el.innerHTML = `
+    <div class="chip-thumb">${chipSVG(m.shape, color)}</div>
+    <div class="c-name">${m.name}</div>
+    <div class="c-type">${m.type}</div>
+    <span class="c-badge" style="color:${color};border-color:${color}55;background:${color}11">${m.proc}</span>
+    <div class="c-extra">
+      <div class="row-x"><span>Характеристики</span><b>${m.spec}</b></div>
+      <div class="row-x"><span>Применение</span><b style="font-size:11px">${m.area}</b></div>
+      <div class="row-x"><span>Этапов</span><b>${m.stages}</b></div>
+      <div class="row-x"><span>Цикл</span><b>${m.cycle}</b></div>
+      <button class="c-open" onclick="event.stopPropagation();openTree(${i})">Открыть дерево производства →</button>
+    </div>`;
+  el.addEventListener('click', () => { if (Math.abs(dragMoved) < 6) rotateToIndex(i); });
+  ring.appendChild(el);
+  return el;
+});
+
+function frontIndex() {
+  let idx = Math.round(-rotation / angleStep) % N;
+  if (idx < 0) idx += N;
+  return idx;
+}
+
+function renderCarousel() {
+  ring.style.transform = `translateZ(-${radius}px) rotateY(${rotation}deg)`;
+  const fi = frontIndex();
+  cards.forEach((el, i) => {
+    const angle = angleStep * i + rotation;
+    el.style.transform = `rotateY(${-angle}deg) translateZ(${radius}px)`;
+    // frontness: cos угла относительно фронта
+    const rad = (angle) * Math.PI / 180;
+    const front = Math.cos(rad); // 1 = спереди
+    const k = (front + 1) / 2;
+    const isFront = (i === fi);
+    el.classList.toggle('is-front', isFront);
+    if (!isFront) {
+      el.style.opacity = (0.35 + k * 0.45).toFixed(2);
+      el.style.filter = `blur(${((1 - k) * 2).toFixed(1)}px)`;
+    } else {
+      el.style.opacity = '1';
+      el.style.filter = 'none';
+    }
+    el.style.zIndex = Math.round(front * 100);
+  });
+}
+
+function rotateToIndex(i) {
+  // ближайший эквивалентный угол
+  let target = -i * angleStep;
+  while (target - rotation > 180) target -= 360;
+  while (target - rotation < -180) target += 360;
+  animateTo(target);
+}
+let animId = null;
+function animateTo(target) {
+  cancelAnimationFrame(animId);
+  function step() {
+    rotation += (target - rotation) * 0.12;
+    if (Math.abs(target - rotation) < 0.1) { rotation = target; renderCarousel(); return; }
+    renderCarousel();
+    animId = requestAnimationFrame(step);
+  }
+  step();
+}
+
+// drag
+const stage = document.getElementById('stage');
+stage.addEventListener('mousedown', (e) => { dragging = true; lastX = e.clientX; dragMoved = 0; velocity = 0; cancelAnimationFrame(animId); });
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX; lastX = e.clientX; dragMoved += dx;
+  rotation += dx * 0.3; velocity = dx * 0.3;
+  renderCarousel();
+});
+window.addEventListener('mouseup', () => { if (dragging) { dragging = false; inertia(); } });
+function inertia() {
+  if (Math.abs(velocity) < 0.1) { snapToNearest(); return; }
+  rotation += velocity; velocity *= 0.95; renderCarousel();
+  requestAnimationFrame(inertia);
+}
+function snapToNearest() { rotateToIndex(frontIndex()); }
+
+// wheel
+stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const dir = e.deltaY > 0 ? 1 : -1;
+  rotateToIndex((frontIndex() + dir + N) % N);
+}, { passive: false });
+
+renderCarousel();
+
+// ============================================================
+//  ПЕРЕХОД КАРУСЕЛЬ <-> ДЕРЕВО
+// ============================================================
+const scrCar = document.getElementById('screen-carousel');
+const scrTree = document.getElementById('screen-tree');
+
+function openTree(i) {
+  currentModel = MODELS[i];
+  document.getElementById('tree-title').textContent = 'Дерево производства · ' + currentModel.name;
+  scrCar.classList.add('screen-hidden');
+  setTimeout(() => {
+    scrTree.classList.remove('screen-hidden');
+    resizeTree();
+    startBuild();
+  }, 400);
+}
+function openTreeFromButton(i) { openTree(i); }
+function backToCarousel() {
+  closePanel();
+  scrTree.classList.add('screen-hidden');
+  setTimeout(() => { scrCar.classList.remove('screen-hidden'); renderCarousel(); }, 400);
+}
+
+// ============================================================
+//  3D-ДЕРЕВО ПРОИЗВОДСТВА
+// ============================================================
+let currentModel = MODELS[0];
+const META = {
+  root:      { desc:'Готовое изделие, прошедшее все этапы', dur:'—', inputs:'Корпусированный кристалл', out:'Микрочип', equip:'—', norm:'—' },
+  final_test:{ desc:'Финальная проверка параметров готового чипа', dur:'~1.5 дня', inputs:'Корпусированный чип', out:'Годное изделие', equip:'ATE Teradyne J750', norm:'1.5 дня' },
+  pack:      { desc:'Установка кристалла в корпус и герметизация', dur:'~2 дня', inputs:'Кристалл, корпус, компаунд', out:'Корпусированный чип', equip:'Линия корпусирования ASM', norm:'2 дня' },
+  dicing:    { desc:'Разрезание пластины на отдельные кристаллы', dur:'~0.5 дня', inputs:'Готовая пластина', out:'Кристаллы (die)', equip:'Disco DAD3350', norm:'0.5 дня' },
+  die_attach:{ desc:'Приклеивание кристалла к подложке корпуса', dur:'~0.5 дня', inputs:'Кристалл, подложка', out:'Кристалл на подложке', equip:'Die Bonder ASM AD830', norm:'0.5 дня' },
+  wire:      { desc:'Разварка золотых проводников к контактам', dur:'~0.5 дня', inputs:'Кристалл, Au-проволока 25мкм', out:'Разваренный кристалл', equip:'Wire Bonder K&S', norm:'0.5 дня' },
+  etest:     { desc:'Электрическое тестирование на пластине (wafer probe)', dur:'~1 день', inputs:'Пластина, зонды', out:'Карта годных кристаллов', equip:'Wafer Prober TEL', norm:'1 день' },
+  metal:     { desc:'Нанесение металлических межсоединений', dur:'~2 дня', inputs:'Пластина, Al/Cu мишень', out:'Металлизированная пластина', equip:'PVD Applied Materials', norm:'2 дня' },
+  cmp:       { desc:'Химико-механическая планаризация поверхности', dur:'~1 день', inputs:'Пластина, суспензия', out:'Планаризованная пластина', equip:'CMP Ebara', norm:'1 день' },
+  etch:      { desc:'Удаление материала по рисунку маски', dur:'~1.5 дня', inputs:'Пластина с фоторезистом', out:'Протравленная пластина', equip:'Plasma Etch LAM', norm:'1.5 дня' },
+  implant:   { desc:'Внедрение примесей для создания p-n переходов', dur:'~1 день', inputs:'Пластина, ионы B/P/As', out:'Легированная пластина', equip:'Ion Implanter AMAT', norm:'1 день' },
+  litho:     { desc:'Формирование рисунка схемы через УФ-экспозицию', dur:'~2.5 дня', inputs:'Пластина, фоторезист, маска', out:'Пластина с рисунком', equip:'Сканер ASML PAS5500', norm:'2.5 дня' },
+  film:      { desc:'Окисление и осаждение тонких плёнок', dur:'~1.5 дня', inputs:'Пластина, газы (O2, SiH4)', out:'Пластина с плёнками', equip:'CVD/Furnace TEL', norm:'1.5 дня' },
+  prep:      { desc:'Очистка и подготовка поверхности пластины', dur:'~1 день', inputs:'Кремниевая пластина', out:'Подготовленная пластина', equip:'Wet Bench, RCA-очистка', norm:'1 день' },
+  ingot:     { desc:'Выращивание монокристалла кремния (метод Чохральского)', dur:'~3 дня', inputs:'Поликремний высокой чистоты', out:'Кремниевый слиток', equip:'Кристаллизатор CZ', norm:'3 дня' },
+};
+const NODES = [
+  { id:'root', level:0, label:'Готовый чип', icon:'chip' },
+  { id:'final_test', level:1, label:'Фин. тест', icon:'check' },
+  { id:'pack', level:1, label:'Корпусирование', icon:'box' },
+  { id:'dicing', level:2, label:'Нарезка', icon:'gear' },
+  { id:'die_attach', level:2, label:'Die Attach', icon:'gear' },
+  { id:'wire', level:2, label:'Разварка', icon:'gear' },
+  { id:'etest', level:3, label:'Электротест', icon:'check' },
+  { id:'metal', level:3, label:'Металлизация', icon:'gear' },
+  { id:'cmp', level:3, label:'Планаризация', icon:'drop' },
+  { id:'etch', level:4, label:'Травление', icon:'drop' },
+  { id:'implant', level:4, label:'Легирование', icon:'gear' },
+  { id:'litho', level:4, label:'Литография', icon:'mask' },
+  { id:'film', level:5, label:'Осаждение плёнок', icon:'gear' },
+  { id:'prep', level:5, label:'Подготовка', icon:'gear' },
+  { id:'ingot', level:6, label:'Слиток Si', icon:'crystal' },
+];
+const EDGES = [
+  ['root','final_test'],['root','pack'],
+  ['final_test','dicing'],['pack','dicing'],
+  ['final_test','die_attach'],['pack','wire'],
+  ['dicing','etest'],['die_attach','metal'],['wire','cmp'],
+  ['etest','etch'],['metal','implant'],['cmp','litho'],
+  ['etch','film'],['implant','film'],['litho','prep'],
+  ['film','ingot'],['prep','ingot'],
+];
+const MAXLEVEL = 6;
+const nodeById = {};
+NODES.forEach(n => nodeById[n.id] = n);
+
+// координаты
+function layoutNodes() {
+  const byLevel = {};
+  NODES.forEach(n => (byLevel[n.level] = byLevel[n.level] || []).push(n));
+  const spacingY = 110, spacingX = 165;
+  Object.keys(byLevel).forEach(lv => {
+    const arr = byLevel[lv]; const k = arr.length;
+    arr.forEach((n, i) => {
+      n.x = (i - (k - 1) / 2) * spacingX;
+      n.y = (MAXLEVEL - n.level) * spacingY - (MAXLEVEL * spacingY) / 2;
+      n.z = [-40, 0, 40][i % 3];
+    });
+  });
+}
+layoutNodes();
+
+const canvas = document.getElementById('tree-canvas');
+const ctx = canvas.getContext('2d');
+let angleX = -0.15, angleY = 0.5, scale = 1;
+let tVel = { x: 0, y: 0 }, tDrag = false, tLast = { x: 0, y: 0 }, tMoved = 0;
+let cw = 0, ch = 0;
+let selected = null, hovered = null;
+let buildStart = 0;
+
+function resizeTree() {
+  const wrap = document.getElementById('tree-wrap');
+  const r = wrap.getBoundingClientRect();
+  cw = r.width; ch = 600;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = cw * dpr; canvas.height = ch * dpr;
+  canvas.style.height = ch + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', () => { if (!scrTree.classList.contains('screen-hidden')) resizeTree(); });
+
+function project(x, y, z) {
+  const cy = Math.cos(angleY), sy = Math.sin(angleY);
+  let x1 = x * cy - z * sy;
+  let z1 = x * sy + z * cy;
+  const cx = Math.cos(angleX), sx = Math.sin(angleX);
+  let y1 = y * cx - z1 * sx;
+  let z2 = y * sx + z1 * cx;
+  const persp = 800;
+  const factor = persp / (persp + z2);
+  return { sx: x1 * factor * scale + cw / 2, sy: -y1 * factor * scale + ch / 2, factor, z: z2 };
+}
+
+function startBuild() { buildStart = performance.now(); selected = null; closePanel(); }
+function nodeVisible(n, elapsed) { return elapsed > n.level * 350; }
+function fullyBuilt(elapsed) { return elapsed > MAXLEVEL * 350 + 600; }
+
+function drawIcon(type, x, y, s, color) {
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  if (type === 'crystal') { ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); ctx.closePath(); ctx.stroke(); }
+  else if (type === 'check') { ctx.moveTo(x - s, y); ctx.lineTo(x - s/3, y + s*0.7); ctx.lineTo(x + s, y - s*0.7); ctx.stroke(); }
+  else if (type === 'box') { ctx.strokeRect(x - s*0.8, y - s*0.6, s*1.6, s*1.2); ctx.moveTo(x - s*0.8, y - s*0.2); ctx.lineTo(x + s*0.8, y - s*0.2); ctx.stroke(); }
+  else if (type === 'drop') { ctx.moveTo(x, y - s); ctx.quadraticCurveTo(x + s, y, x, y + s); ctx.quadraticCurveTo(x - s, y, x, y - s); ctx.stroke(); }
+  else if (type === 'mask') { ctx.strokeRect(x - s*0.8, y - s*0.8, s*1.6, s*1.6); for (let i=-1;i<=1;i++){ctx.moveTo(x+i*s*0.5,y-s*0.8);ctx.lineTo(x+i*s*0.5,y+s*0.8);} ctx.stroke(); }
+  else if (type === 'chip') { ctx.strokeRect(x - s*0.7, y - s*0.7, s*1.4, s*1.4); ctx.fillRect(x - s*0.25, y - s*0.25, s*0.5, s*0.5); }
+  else { // gear/точка
+    ctx.arc(x, y, s*0.6, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, s*0.2, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+function hexPath(x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 6 + i * Math.PI / 3;
+    const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function drawTree() {
+  ctx.clearRect(0, 0, cw, ch);
+  const color = SERIES[currentModel.series];
+  const elapsed = performance.now() - buildStart;
+  const built = fullyBuilt(elapsed);
+
+  // проекции
+  const proj = {};
+  NODES.forEach(n => proj[n.id] = project(n.x, n.y, n.z));
+
+  // рёбра
+  EDGES.forEach(([a, b]) => {
+    const na = nodeById[a], nb = nodeById[b];
+    const childLevel = Math.max(na.level, nb.level);
+    if (elapsed < childLevel * 350 + 150) return;
+    const pa = proj[a], pb = proj[b];
+    const f = (pa.factor + pb.factor) / 2;
+    const dim = selected && a !== selected && b !== selected ? 0.25 : 1;
+    const grad = ctx.createLinearGradient(pa.sx, pa.sy, pb.sx, pb.sy);
+    grad.addColorStop(0, hexA(color, (0.3 + 0.6 * f) * dim));
+    grad.addColorStop(1, hexA('#ffffff', (0.15 + 0.3 * f) * dim));
+    ctx.strokeStyle = grad; ctx.lineWidth = 2 * f * (selected && (a===selected||b===selected) ? 2 : 1);
+    ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke();
+
+    // бегущая частица (child -> parent), только после полной сборки
+    if (built) {
+      const t = ((performance.now() / 1400 + (a.length * 0.13 + b.length * 0.07)) % 1);
+      const px = pb.sx + (pa.sx - pb.sx) * t;
+      const py = pb.sy + (pa.sy - pb.sy) * t;
+      ctx.beginPath(); ctx.fillStyle = hexA(color, 0.9 * dim);
+      ctx.shadowColor = color; ctx.shadowBlur = 8;
+      ctx.arc(px, py, 2.5 * f, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    }
+  });
+
+  // узлы — сортируем по z (дальние первыми)
+  const order = NODES.slice().filter(n => nodeVisible(n, elapsed)).sort((a, b) => proj[b.id].z - proj[a.id].z);
+  order.forEach(n => {
+    const p = proj[n.id];
+    const isRoot = n.id === 'root';
+    let r = 30 * p.factor * (isRoot ? 1.5 : 1);
+    const isSel = selected === n.id;
+    const isHov = hovered === n.id;
+    if (isSel) r *= 1.3;
+    // pop-in
+    const appear = Math.min(1, (elapsed - n.level * 350) / 300);
+    r *= appear;
+    const dim = selected && !isSel ? 0.4 : 1;
+
+    ctx.save();
+    if (isRoot) {
+      const pulse = 12 + Math.sin(performance.now() / 400) * 8;
+      ctx.shadowColor = color; ctx.shadowBlur = pulse;
+    } else if (isHov || isSel) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
+
+    hexPath(p.sx, p.sy, r);
+    if (isRoot) {
+      const g = ctx.createLinearGradient(p.sx - r, p.sy - r, p.sx + r, p.sy + r);
+      g.addColorStop(0, hexA(color, 0.6)); g.addColorStop(1, 'rgba(15,25,50,0.9)');
+      ctx.fillStyle = g;
+    } else {
+      ctx.fillStyle = `rgba(15,25,50,${0.8 * dim})`;
+    }
+    ctx.fill();
+    ctx.strokeStyle = hexA(color, (isHov || isSel ? 1 : 0.8) * dim);
+    ctx.lineWidth = (isHov || isSel ? 3 : 2) * p.factor;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // иконка
+    if (appear > 0.7) drawIcon(n.icon, p.sx, p.sy, r * 0.4, hexA(color, dim));
+    ctx.restore();
+
+    // подпись
+    if (p.factor > 0.6 && appear > 0.8) {
+      ctx.font = `${Math.round(11 * p.factor)}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(228,230,240,${dim})`;
+      ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4;
+      const lbl = isRoot ? currentModel.name : n.label;
+      ctx.fillText(lbl, p.sx, p.sy + r + 14);
+      ctx.shadowBlur = 0;
+    }
+    n._screen = p;
+    n._r = r;
+  });
+
+  // инерция вращения
+  if (!tDrag) {
+    angleY += tVel.y; angleX += tVel.x;
+    tVel.x *= 0.93; tVel.y *= 0.93;
+    if (Math.abs(tVel.x) < 0.0001) tVel.x = 0;
+    if (Math.abs(tVel.y) < 0.0001) tVel.y = 0;
+  }
+  angleX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, angleX));
+
+  requestAnimationFrame(drawTree);
+}
+
+function hexA(hex, a) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const n = parseInt(hex, 16);
+  return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;
+}
+
+// взаимодействие с деревом
+canvas.addEventListener('mousedown', (e) => { tDrag = true; tMoved = 0; tLast = { x: e.clientX, y: e.clientY }; tVel = { x: 0, y: 0 }; });
+window.addEventListener('mousemove', (e) => {
+  if (tDrag) {
+    const dx = e.clientX - tLast.x, dy = e.clientY - tLast.y;
+    tLast = { x: e.clientX, y: e.clientY }; tMoved += Math.abs(dx) + Math.abs(dy);
+    angleY += dx * 0.008; angleX += dy * 0.008;
+    tVel = { x: dy * 0.008, y: dx * 0.008 };
+  } else if (!scrTree.classList.contains('screen-hidden')) {
+    // hover
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    hovered = null;
+    for (const n of NODES) {
+      if (!n._screen) continue;
+      const d = Math.hypot(mx - n._screen.sx, my - n._screen.sy);
+      if (d < (n._r || 20)) { hovered = n.id; break; }
+    }
+    const tip = document.getElementById('node-tooltip');
+    if (hovered) {
+      const n = nodeById[hovered], m = META[hovered];
+      const live = liveForStage(n);
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+      tip.innerHTML = `<div class="nt-title">${hovered==='root'?currentModel.name:n.label}</div>
+        <div class="nt-row">${m.desc}</div>
+        <div class="nt-row">⏱ <b>${m.dur}</b></div>
+        <div class="nt-row">📥 ${m.inputs}</div>
+        ${live ? `<div class="nt-row">🔄 <b>${live}</b></div>` : ''}`;
+      canvas.style.cursor = 'pointer';
+    } else { tip.style.display = 'none'; canvas.style.cursor = 'grab'; }
+  }
+});
+window.addEventListener('mouseup', () => { tDrag = false; });
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  scale = Math.max(0.5, Math.min(2, scale - e.deltaY * 0.0012));
+}, { passive: false });
+canvas.addEventListener('click', (e) => {
+  if (tMoved > 6) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let hit = null;
+  for (const n of NODES) {
+    if (!n._screen) continue;
+    if (Math.hypot(mx - n._screen.sx, my - n._screen.sy) < (n._r || 20)) { hit = n.id; break; }
+  }
+  if (hit) { selected = hit; openPanel(hit); }
+});
+
+function liveForStage(n) {
+  // привязка к живой симуляции: маппинг этапов
+  if (!window.ErpSim) return null;
+  const map = { prep:1, litho:2, etch:3, implant:4, etest:5, final_test:5, pack:6 };
+  const simStage = map[n.id];
+  if (!simStage) return null;
+  const lot = ErpSim.getLots().find(l => l.stage === simStage && l.status === 'running');
+  return lot ? `${lot.id} · ${Math.round(lot.progress)}%` : null;
+}
+
+function openPanel(id) {
+  const n = nodeById[id], m = META[id];
+  const color = SERIES[currentModel.series];
+  const live = liveForStage(n);
+  document.getElementById('np-body').innerHTML = `
+    <h5>${id==='root'?currentModel.name:n.label}</h5>
+    <div style="color:var(--text-secondary);font-size:.85rem">${m.desc}</div>
+    <div class="np-field"><div class="lbl">Входные материалы</div><div class="val">${m.inputs}</div></div>
+    <div class="np-field"><div class="lbl">Результат этапа</div><div class="val">${m.out}</div></div>
+    <div class="np-field"><div class="lbl">Оборудование</div><div class="val">${m.equip}</div></div>
+    <div class="np-field"><div class="lbl">Нормативное время</div><div class="val">${m.norm}</div></div>
+    <div class="np-field"><div class="lbl">Уровень в дереве</div><div class="val">${n.level} / ${MAXLEVEL}</div></div>
+    ${live ? `<div class="np-field"><div class="lbl">Текущая партия</div><div class="val" style="color:${color}">🔄 ${live}</div></div>` : '<div class="np-field"><div class="lbl">Текущая партия</div><div class="val text-muted">нет активных</div></div>'}
+  `;
+  document.getElementById('node-panel').classList.add('open');
+}
+function closePanel() {
+  selected = null;
+  const p = document.getElementById('node-panel');
+  if (p) p.classList.remove('open');
+}
+
+drawTree();
+</script>
+{% endblock %}
