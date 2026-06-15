@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Логистика{% endblock %}
+{% block content %}
+<div class="hero-bar">
+  <div class="hero-canvas-wrap"><canvas id="hero-canvas"></canvas></div>
+  <div class="hero-text">
+    <h2><i class="bi bi-truck me-2" style="color:var(--accent-yellow)"></i>Логистика и поставки</h2>
+    <p>Маршруты · отгрузки · ETA · аналитика доставок</p>
+  </div>
+  <div class="ms-auto">
+    <button class="btn btn-outline-secondary btn-sm btn-spin" onclick="refresh()"><i class="bi bi-arrow-clockwise me-1"></i>Обновить</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4"><div class="kpi-card cyan"><div class="kpi-label">📦 Активных поставок</div><div class="kpi-value" id="kpi-active">—</div></div></div>
+  <div class="col-md-4"><div class="kpi-card green"><div class="kpi-label">⏱ Среднее время доставки</div><div class="kpi-value" id="kpi-avg">—</div></div></div>
+  <div class="col-md-4"><div class="kpi-card orange"><div class="kpi-label">📉 Задержек / % вовремя</div><div class="kpi-value" id="kpi-ot">—</div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-3">
+      <h5><i class="bi bi-list-task me-2" style="color:var(--accent-cyan)"></i>Активные поставки</h5>
+      <div class="table-responsive">
+        <table class="table table-sm compact mb-0">
+          <thead><tr><th>ID</th><th>Тип</th><th>Содержимое</th><th>Маршрут</th><th>Статус</th><th>ETA</th></tr></thead>
+          <tbody id="shipments"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card p-3">
+      <h5><i class="bi bi-geo-alt me-2" style="color:var(--accent-yellow)"></i>Карта маршрутов</h5>
+      <svg id="map-svg" viewBox="0 0 500 360" style="width:100%;height:auto">
+        <defs>
+          <radialGradient id="node-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="rgba(255,230,107,.6)"/>
+            <stop offset="100%" stop-color="transparent"/>
+          </radialGradient>
+        </defs>
+        <!-- Маршруты — анимированные пунктиры -->
+        <g fill="none" stroke="#ffe66b" stroke-width="1.8" stroke-dasharray="6 5" stroke-linecap="round">
+          <line x1="80"  y1="60"  x2="240" y2="170" class="route"/>
+          <line x1="240" y1="170" x2="420" y2="80"  class="route"/>
+          <line x1="240" y1="170" x2="380" y2="280" class="route"/>
+          <line x1="240" y1="170" x2="100" y2="290" class="route"/>
+          <line x1="380" y1="280" x2="100" y2="290" class="route" stroke="#00d4ff" stroke-dasharray="4 6"/>
+        </g>
+        <!-- Узлы -->
+        <g>
+          <circle cx="80"  cy="60"  r="22" fill="url(#node-glow)"/>
+          <circle cx="240" cy="170" r="22" fill="url(#node-glow)"/>
+          <circle cx="420" cy="80"  r="22" fill="url(#node-glow)"/>
+          <circle cx="380" cy="280" r="22" fill="url(#node-glow)"/>
+          <circle cx="100" cy="290" r="22" fill="url(#node-glow)"/>
+        </g>
+        <g class="nodes" font-family="JetBrains Mono,monospace" font-size="10" fill="#e4e6f0">
+          <g class="node" data-label="Склад сырья (Si пластины, химикаты)">
+            <circle cx="80" cy="60" r="10" fill="#0a0e1a" stroke="#00d4ff" stroke-width="2"/>
+            <circle cx="80" cy="60" r="4" fill="#00d4ff"/>
+            <text x="80" y="40" text-anchor="middle">Склад сырья</text>
+          </g>
+          <g class="node" data-label="Производственный цех — 6 этапов">
+            <circle cx="240" cy="170" r="12" fill="#0a0e1a" stroke="#bf6bff" stroke-width="2"/>
+            <circle cx="240" cy="170" r="5" fill="#bf6bff"/>
+            <text x="240" y="195" text-anchor="middle">Производство</text>
+          </g>
+          <g class="node" data-label="Тестирование готовых партий">
+            <circle cx="420" cy="80" r="10" fill="#0a0e1a" stroke="#00ff88" stroke-width="2"/>
+            <circle cx="420" cy="80" r="4" fill="#00ff88"/>
+            <text x="420" y="60" text-anchor="middle">Тест-лаб</text>
+          </g>
+          <g class="node" data-label="Склад готовой продукции">
+            <circle cx="380" cy="280" r="10" fill="#0a0e1a" stroke="#ffb86b" stroke-width="2"/>
+            <circle cx="380" cy="280" r="4" fill="#ffb86b"/>
+            <text x="380" y="305" text-anchor="middle">Склад ГП</text>
+          </g>
+          <g class="node" data-label="Пункт отгрузки клиентам">
+            <circle cx="100" cy="290" r="10" fill="#0a0e1a" stroke="#ff5577" stroke-width="2"/>
+            <circle cx="100" cy="290" r="4" fill="#ff5577"/>
+            <text x="100" y="315" text-anchor="middle">Отгрузка</text>
+          </g>
+        </g>
+      </svg>
+      <div id="map-tooltip" style="display:none;position:fixed;pointer-events:none;background:rgba(10,14,26,.95);border:1px solid var(--border-glass-strong);border-radius:8px;padding:.4rem .6rem;font-size:.8rem;color:var(--accent-cyan);z-index:200;backdrop-filter:blur(8px)"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .route { animation: dash-flow 1.5s linear infinite; }
+  @keyframes dash-flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -22; } }
+  #shipments tr { cursor: pointer; transition: all .15s; }
+  #shipments tr.row-update { animation: flash-green 1.2s; }
+  .nodes .node { cursor: pointer; transition: filter .2s; }
+  .nodes .node:hover { filter: drop-shadow(0 0 8px var(--accent-cyan)); }
+  .badge-route-in   { background: rgba(0,212,255,.15); color: var(--accent-cyan); border:1px solid rgba(0,212,255,.3); }
+  .badge-route-out  { background: rgba(0,255,136,.15); color: var(--accent-green); border:1px solid rgba(0,255,136,.3); }
+  .badge-route-wait { background: rgba(255,184,107,.15); color: var(--accent-orange); border:1px solid rgba(255,184,107,.3); }
+  .badge-route-done { background: rgba(0,255,136,.1); color: #66ffaa; border:1px solid rgba(0,255,136,.25); }
+  .badge-route-transit { background: rgba(191,107,255,.15); color: var(--accent-purple); border:1px solid rgba(191,107,255,.3); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+startPolyhedron('hero-canvas','cuboctahedron',{speed:.85, scale:38});
+
+const ROUTES = ['Москва → Зеленоград', 'Шэньчжэнь → Москва', 'Зеленоград → СПб', 'Цех → Тест-лаб', 'Склад ГП → Берлин', 'Тайвань → Зеленоград', 'Зеленоград → Новосибирск', 'Цех → Склад ГП'];
+const CONTENT = ['Si пластины 300мм', 'Фоторезист AZ', 'Готовые чипы SOC-X1', 'Тестовые образцы', 'Маски литографии', 'Корпуса DIP', 'Эпоксидный компаунд', 'Зонды'];
+
+let shipments = [];
+function init() {
+  const statuses = ['transit','transit','transit','wait','done','transit','done','transit'];
+  for (let i=0; i<8; i++) {
+    const eta = Date.now() + (Math.floor(Math.random()*48)-12) * 3600 * 1000;
+    shipments.push({
+      id: 'SH-' + (1000+i),
+      type: i % 3 === 0 ? 'out' : 'in',
+      content: CONTENT[i],
+      route: ROUTES[i],
+      status: statuses[i],
+      eta,
+      delivered: statuses[i] === 'done'
+    });
+  }
+}
+init();
+
+function statusBadge(s) {
+  const map = { transit:['В пути','transit'], wait:['Ожидает','wait'], done:['Доставлено','done'] };
+  const [text, cls] = map[s] || [s, s];
+  return `<span class="badge badge-route-${cls}">${text}</span>`;
+}
+
+function renderShipments() {
+  const tb = document.getElementById('shipments');
+  tb.innerHTML = shipments.map(s => `<tr data-id="${s.id}">
+    <td><code>${s.id}</code></td>
+    <td><span class="badge badge-route-${s.type==='in'?'in':'out'}">${s.type==='in'?'Входящая':'Исходящая'}</span></td>
+    <td>${s.content}</td>
+    <td><small style="color:var(--text-secondary)">${s.route}</small></td>
+    <td>${statusBadge(s.status)}</td>
+    <td><small class="mono ${s.status==='done'?'text-muted':''}">${fmt(s.eta)}</small></td>
+  </tr>`).join('');
+}
+
+function updateKPI() {
+  const active = shipments.filter(s=>s.status!=='done').length;
+  const ontime = Math.round(shipments.filter(s=>s.eta > Date.now() || s.status==='done').length / shipments.length * 100);
+  const avgHrs = (Math.random()*24 + 14).toFixed(1);
+  document.getElementById('kpi-active').textContent = active;
+  document.getElementById('kpi-avg').textContent = avgHrs + 'ч';
+  document.getElementById('kpi-ot').textContent = (shipments.length - shipments.filter(s=>s.status==='done').length) + ' / ' + ontime + '%';
+}
+
+renderShipments(); updateKPI();
+
+// Каждые 60 сек одна "В пути" → "Доставлено"
+setInterval(() => {
+  const transit = shipments.filter(s=>s.status==='transit');
+  if (!transit.length) return;
+  const s = transit[Math.floor(Math.random()*transit.length)];
+  s.status = 'done'; s.delivered = true;
+  renderShipments(); updateKPI();
+  const row = document.querySelector(`#shipments tr[data-id="${s.id}"]`);
+  if (row) { row.classList.add('row-update'); setTimeout(()=>row.classList.remove('row-update'), 1200); }
+  ErpSim.showToast(`🚚 <b>Поставка ${s.id}</b><br>${s.content}<br><span style="color:var(--accent-green)">Доставлено</span>`, 'success');
+  ErpSim.logEvent('success', `Поставка ${s.id} (${s.content}) доставлена`);
+}, 60000);
+
+// hover на карте
+document.querySelectorAll('.nodes .node').forEach(n => {
+  n.addEventListener('mousemove', e => {
+    const tip = document.getElementById('map-tooltip');
+    tip.style.display='block';
+    tip.style.left = (e.clientX+12) + 'px';
+    tip.style.top = (e.clientY+12) + 'px';
+    tip.textContent = n.dataset.label;
+  });
+  n.addEventListener('mouseleave', () => { document.getElementById('map-tooltip').style.display='none'; });
+});
+
+function refresh() { renderShipments(); updateKPI(); }
+</script>
+{% endblock %}

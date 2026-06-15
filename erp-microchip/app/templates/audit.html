@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Аудит{% endblock %}
+{% block content %}
+<div class="hero-bar">
+  <div class="hero-canvas-wrap"><canvas id="hero-canvas"></canvas></div>
+  <div class="hero-text">
+    <h2><i class="bi bi-shield-check me-2" style="color:#cfd6e6"></i>Аудит-лог</h2>
+    <p>История действий в БД + системные события симуляции</p>
+  </div>
+  <div class="ms-auto d-flex gap-2 align-items-center">
+    <select id="evt-filter" class="form-select form-select-sm" style="width:170px">
+      <option value="">Все события</option>
+      <option value="info">Info</option>
+      <option value="success">Success</option>
+      <option value="warning">Warning</option>
+      <option value="error">Error</option>
+    </select>
+    <button class="btn btn-outline-secondary btn-sm btn-spin" onclick="loadAll()"><i class="bi bi-arrow-clockwise me-1"></i>Обновить</button>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-3">
+      <h5><i class="bi bi-database me-2" style="color:var(--accent-cyan)"></i>Журнал БД</h5>
+      <div class="table-responsive" style="max-height:600px">
+        <table class="table table-sm compact mb-0" id="t-db"></table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3">
+      <h5><i class="bi bi-broadcast me-2" style="color:var(--accent-orange)"></i>События системы (live)</h5>
+      <div id="sim-events" style="max-height:600px;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .evt-item {
+    padding:.5rem .7rem; border-radius:8px; margin-bottom:.4rem;
+    background: rgba(17,24,39,.5); border-left: 3px solid var(--text-muted);
+    animation: evt-slide .4s cubic-bezier(.2,.8,.2,1);
+    font-size:.85rem;
+  }
+  .evt-item .evt-meta { font-family: var(--font-mono); font-size:.72rem; color: var(--text-muted); margin-bottom:.15rem; display:flex; gap:.5rem; }
+  .evt-item.info    { border-left-color: var(--accent-cyan); }
+  .evt-item.info    .evt-meta .evt-type { color: var(--accent-cyan); }
+  .evt-item.success { border-left-color: var(--accent-green); }
+  .evt-item.success .evt-meta .evt-type { color: var(--accent-green); }
+  .evt-item.warning { border-left-color: var(--accent-yellow); }
+  .evt-item.warning .evt-meta .evt-type { color: var(--accent-yellow); }
+  .evt-item.error   { border-left-color: var(--accent-red); }
+  .evt-item.error   .evt-meta .evt-type { color: var(--accent-red); }
+  @keyframes evt-slide { from { opacity:0; transform: translateY(-10px); } to { opacity:1; transform: translateY(0); } }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+startPolyhedron('hero-canvas','dodecahedron',{speed:.5, scale:30});
+
+let filterType = '';
+document.getElementById('evt-filter').onchange = e => { filterType = e.target.value; renderEvents(); };
+
+async function loadDB() {
+  try {
+    const rows = await api('/api/audit/');
+    document.getElementById('t-db').innerHTML =
+      '<thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th><th>IP</th></tr></thead><tbody>' +
+      rows.map(r=>`<tr><td><small class="mono">${fmt(r.ts)}</small></td><td>${r.user}</td><td><code>${r.action}</code></td><td>${r.entity} <span class="text-muted">${r.entity_id}</span></td><td><small class="mono text-muted">${r.ip}</small></td></tr>`).join('') +
+      '</tbody>';
+  } catch(e) {}
+}
+
+function renderEvents() {
+  const events = ErpSim.getEvents();
+  const filtered = filterType ? events.filter(e=>e.type===filterType) : events;
+  document.getElementById('sim-events').innerHTML = filtered.map(e => `
+    <div class="evt-item ${e.type}">
+      <div class="evt-meta">
+        <span class="mono">${new Date(e.ts).toLocaleTimeString('ru-RU')}</span>
+        <span class="evt-type">[${e.type.toUpperCase()}]</span>
+      </div>
+      <div>${e.text}</div>
+    </div>
+  `).join('') || '<div style="color:var(--text-muted);text-align:center;padding:1rem">Нет событий</div>';
+}
+
+ErpSim.on('event', () => renderEvents());
+
+function loadAll() { loadDB(); renderEvents(); }
+loadAll();
+</script>
+{% endblock %}
